@@ -52,6 +52,7 @@
 
 #include <EnergyPlus/Construction.hh>
 #include <EnergyPlus/Data/EnergyPlusData.hh>
+#include <EnergyPlus/DataGlobalConstants.hh>
 #include <EnergyPlus/DataEnvironment.hh>
 #include <EnergyPlus/DataHVACGlobals.hh>
 #include <EnergyPlus/DataRuntimeLanguage.hh>
@@ -73,42 +74,74 @@ APIDataEntry *getAPIData(EnergyPlusState state, unsigned int *resultingSize)
         std::string name;
         std::string type;
         std::string key;
-        LocalAPIDataEntry(std::string _what, std::string _name, std::string _key, std::string _type)
-            : what(std::move(_what)), name(std::move(_name)), type(std::move(_type)), key(std::move(_key))
+        std::string unit;
+        LocalAPIDataEntry(std::string _what, std::string _name, std::string _key, std::string _type, std::string _unit)
+            : what(std::move(_what)), name(std::move(_name)), type(std::move(_type)), key(std::move(_key)), unit(std::move(_unit))
         {
         }
     };
     std::vector<LocalAPIDataEntry> localDataEntries;
     auto *thisState = reinterpret_cast<EnergyPlus::EnergyPlusData *>(state);
     for (auto const &availActuator : thisState->dataRuntimeLang->EMSActuatorAvailable) {
-        if (availActuator.ComponentTypeName.empty() && availActuator.UniqueIDName.empty() && availActuator.ControlTypeName.empty()) {
+        if (availActuator.ComponentTypeName.empty() 
+            && availActuator.UniqueIDName.empty() 
+            && availActuator.ControlTypeName.empty()) 
+        {
             break;
         }
-        localDataEntries.emplace_back("Actuator", availActuator.ComponentTypeName, availActuator.ControlTypeName, availActuator.UniqueIDName);
+        localDataEntries.emplace_back(
+            "Actuator", 
+            availActuator.ComponentTypeName, 
+            availActuator.ControlTypeName,
+            availActuator.UniqueIDName,
+            availActuator.Units
+        );
     }
     for (auto const &availVariable : thisState->dataRuntimeLang->EMSInternalVarsAvailable) {
         if (availVariable.DataTypeName.empty() && availVariable.UniqueIDName.empty()) {
             break;
         }
-        localDataEntries.emplace_back("InternalVariable", availVariable.DataTypeName, "", availVariable.UniqueIDName);
+        localDataEntries.emplace_back(
+            "InternalVariable", 
+            availVariable.DataTypeName, 
+            "", 
+            availVariable.UniqueIDName, 
+            availVariable.Units
+        );
     }
     for (auto const &gVarName : thisState->dataPluginManager->globalVariableNames) {
-        localDataEntries.emplace_back("PluginGlobalVariable", "", "", gVarName);
+        localDataEntries.emplace_back("PluginGlobalVariable", "", "", gVarName, "");
     }
     for (auto const &trend : thisState->dataPluginManager->trends) {
-        localDataEntries.emplace_back("PluginTrendVariable,", "", "", trend.name);
+        localDataEntries.emplace_back("PluginTrendVariable,", "", "", trend.name, "");
     }
     for (auto const &meter : thisState->dataOutputProcessor->EnergyMeters) {
         if (meter.Name.empty()) {
             break;
         }
-        localDataEntries.emplace_back("OutputMeter", "", "", meter.Name);
+        localDataEntries.emplace_back(
+            "OutputMeter", 
+            "", 
+            "", 
+            meter.Name, 
+            EnergyPlus::Constant::unitToString(
+                meter.Units
+            )
+        );
     }
     for (auto const &variable : thisState->dataOutputProcessor->RVariableTypes) {
         if (variable.VarNameOnly.empty() && variable.KeyNameOnlyUC.empty()) {
             break;
         }
-        localDataEntries.emplace_back("OutputVariable", variable.VarNameOnly, "", variable.KeyNameOnlyUC);
+        localDataEntries.emplace_back(
+            "OutputVariable", 
+            variable.VarNameOnly, 
+            "", 
+            variable.KeyNameOnlyUC, 
+            variable.units == EnergyPlus::Constant::Units::customEMS
+                ? variable.unitNameCustomEMS
+                : EnergyPlus::Constant::unitToString(variable.units)
+        );
     }
     *resultingSize = localDataEntries.size();
     auto *data = new APIDataEntry[*resultingSize];
@@ -121,6 +154,8 @@ APIDataEntry *getAPIData(EnergyPlusState state, unsigned int *resultingSize)
         std::strcpy(data[i].key, localDataEntries[i].key.c_str());
         data[i].type = new char[std::strlen(localDataEntries[i].type.c_str()) + 1];
         std::strcpy(data[i].type, localDataEntries[i].type.c_str());
+        data[i].unit = new char[std::strlen(localDataEntries[i].unit.c_str()) + 1];
+        std::strcpy(data[i].unit, localDataEntries[i].unit.c_str());
     }
     return data;
 }
@@ -132,6 +167,7 @@ void freeAPIData(struct APIDataEntry *data, unsigned int arraySize)
         delete[] data[i].name;
         delete[] data[i].key;
         delete[] data[i].type;
+        delete[] data[i].unit;
     }
     delete[] data;
 }
@@ -147,7 +183,8 @@ char *listAllAPIDataCSV(EnergyPlusState state)
         output.append("Actuator,");
         output.append(availActuator.ComponentTypeName).append(",");
         output.append(availActuator.ControlTypeName).append(",");
-        output.append(availActuator.UniqueIDName).append("\n");
+        output.append(availActuator.UniqueIDName).append(",");
+        output.append(availActuator.Units).append("\n");
     }
     output.append("**INTERNAL_VARIABLES**\n");
     for (auto const &availVariable : thisState->dataRuntimeLang->EMSInternalVarsAvailable) {
@@ -156,7 +193,8 @@ char *listAllAPIDataCSV(EnergyPlusState state)
         }
         output.append("InternalVariable,");
         output.append(availVariable.DataTypeName).append(",");
-        output.append(availVariable.UniqueIDName).append("\n");
+        output.append(availVariable.UniqueIDName).append(",");
+        output.append(availVariable.Units).append("\n");
     }
     output.append("**PLUGIN_GLOBAL_VARIABLES**\n");
     for (auto const &gVarName : thisState->dataPluginManager->globalVariableNames) {
@@ -173,8 +211,11 @@ char *listAllAPIDataCSV(EnergyPlusState state)
         if (meter.Name.empty()) {
             break;
         }
-        output.append("OutputMeter,");
-        output.append(meter.Name).append("\n");
+        output.append("OutputMeter").append(",");
+        output.append(meter.Name).append(",");
+        output.append(
+            EnergyPlus::Constant::unitToString(meter.Units)
+        ).append("\n");
     }
     output.append("**VARIABLES**\n");
     for (auto const &variable : thisState->dataOutputProcessor->RVariableTypes) {
@@ -183,7 +224,12 @@ char *listAllAPIDataCSV(EnergyPlusState state)
         }
         output.append("OutputVariable,");
         output.append(variable.VarNameOnly).append(",");
-        output.append(variable.KeyNameOnlyUC).append("\n");
+        output.append(variable.KeyNameOnlyUC).append(",");
+        output.append(
+            variable.units == EnergyPlus::Constant::Units::customEMS
+            ? variable.unitNameCustomEMS
+            : EnergyPlus::Constant::unitToString(variable.units)
+        ).append("\n");
     }
     // note that we cannot just return a c_str to the local string, as the string will be destructed upon leaving
     // this function, and undefined behavior will occur.

@@ -73,6 +73,8 @@
 #include <EnergyPlus/ScheduleManager.hh>
 #include <EnergyPlus/UtilityRoutines.hh>
 
+using namespace EnergyPlus::OutputProcessor;
+
 namespace EnergyPlus::OutputReportTabularAnnual {
 
 void GetInputTabularAnnual(EnergyPlusData &state)

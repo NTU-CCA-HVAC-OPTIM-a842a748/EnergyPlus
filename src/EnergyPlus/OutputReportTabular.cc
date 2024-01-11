@@ -131,6 +131,8 @@
 #include <EnergyPlus/ZonePlenum.hh>
 #include <EnergyPlus/ZoneTempPredictorCorrector.hh>
 
+using namespace EnergyPlus::OutputProcessor;
+
 namespace EnergyPlus::OutputReportTabular {
 
 // MODULE INFORMATION:

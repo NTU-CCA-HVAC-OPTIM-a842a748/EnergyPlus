@@ -62,6 +62,7 @@
 // EnergyPlus Headers
 #include <EnergyPlus/Data/BaseData.hh>
 #include <EnergyPlus/DataGlobals.hh>
+#include <EnergyPlus/DataGlobalConstants.hh>
 #include <EnergyPlus/DisplayRoutines.hh>
 #include <EnergyPlus/EPVector.hh>
 #include <EnergyPlus/EnergyPlus.hh>
@@ -170,7 +171,9 @@ namespace OutputProcessor {
         Num
     };
 
-    enum class Unit
+    using Unit = EnergyPlus::Constant::Units;
+
+    enum class LegacyUnit
     {
         Invalid = -1,
         kg_s,
